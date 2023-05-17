@@ -1,0 +1,423 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/*
+Two structures are being generated in this code:
+
+DiabetesData will keep data for the year, value, province and age group
+AverageData will keep data for the total_value, count and province
+*/
+typedef struct {
+    int year;
+    char province[50];
+    char age_group[50];
+    float value;
+} DiabetesData;
+
+typedef struct {
+    char province[50];
+    float total_value;
+    int count;
+} AverageData;
+
+
+
+/*
+Four functions are being declared here:
+The parse_csv_file function will extract data from a CSV file and keep it in a DiabetesData structure
+The calculate_averages function will compute multiple averages with the DiabetesData structure
+The generate_plots function will create plots with the averages computed
+The output_results function will produce the averages calculated and the OG data in a file
+*/
+void parse_csv_file(const char *filename, DiabetesData **data, int *num_entries);
+void calculate_averages(DiabetesData *data, int num_entries, AverageData *provincial_averages, AverageData *national_average, AverageData *yearly_averages, AverageData *age_group_averages);
+void generate_plots(AverageData *provincial_averages, AverageData *national_average, AverageData *yearly_averages, AverageData *age_group_averages);
+void output_results(AverageData *provincial_averages, AverageData *national_average, AverageData *yearly_averages, AverageData *age_group_averages, DiabetesData *data, int num_entries);
+
+
+/*
+Another three functions are declared in this part of code:
+
+The find_highest_lowest_diabetes_provinces function will detect the provinces that has the greatest diabetes rates and the smallest rates, using the provincial averages
+The find_provinces_above_below_national_average function will detect the provinces that are above and under the national average percentage
+The find_highest_lowest_diabetes_year_province function will detect the province and the year that has the greatest and lowest rate, using the OG data
+*/
+void find_highest_lowest_diabetes_provinces(AverageData *provincial_averages, char *highest_province, char *lowest_province);
+void find_provinces_above_below_national_average(AverageData *provincial_averages, AverageData *national_average);
+void find_highest_lowest_diabetes_year_province(DiabetesData *data, int num_entries, int *highest_year, char *highest_province, int *lowest_year, char *lowest_province);
+
+
+int main() {
+    DiabetesData *data = NULL;
+    int num_entries = 0;
+
+    /* The CSV file is parsed*/
+    parse_csv_file("statscan_diabetes.csv", &data, &num_entries);
+
+    /* The averages are computed*/
+    AverageData provincial_averages[4], national_average, yearly_averages[35], age_group_averages[12];
+    calculate_averages(data, num_entries, provincial_averages, &national_average, yearly_averages, age_group_averages);
+
+    /* The provinces that have the greatest and smallest percentages are detected */
+    char highest_province[50], lowest_province[50];
+    int highest_year, lowest_year;
+    find_highest_lowest_diabetes_provinces(provincial_averages, highest_province, lowest_province);
+    find_provinces_above_below_national_average(provincial_averages, &national_average);
+    find_highest_lowest_diabetes_year_province(data, num_entries, &highest_year, highest_province, &lowest_year, lowest_province);
+
+    /* The results are outputted*/
+    output_results(provincial_averages, &national_average, yearly_averages, age_group_averages, data, num_entries);
+
+
+    /* The plots are generated */
+    generate_plots(provincial_averages, &national_average, yearly_averages, age_group_averages);
+  
+
+    /* the memory is freed */
+    free(data);
+
+    return 0;
+}
+
+
+/* The updated parse_csv_file function is created here. Its description is listed below:
+
+If the provided file can not open, program terminates with an error message
+Determines how many lines are in the file , while disregarding the header line
+Based on the number of lines, this provides memory for the DiabetesData structure
+This saves the information that was read from the file in the DiabetesData structure
+This parses the year, age group, province and value from the supplied csv line using sscanf()
+Frees the file pointer and modifies num_entries to reflect the DiabetesData structure's entry count */
+    void parse_csv_file(const char *filename, DiabetesData **data, int *num_entries) {
+            FILE *file = fopen(filename, "r");
+        if (!file) {perror("Error opening file");
+            exit(1);
+        }
+    
+    /* The lines are counted in the file, disregarding the header*/
+    int lines = 0;
+    char c;
+    while ((c = fgetc(file)) != EOF) {
+        if (c == '\n') {
+            lines++;
+        }
+    }
+    lines--; /* The header line is excluded */
+
+    /* Allot storage space for the data */
+    *data = (DiabetesData *)malloc(lines * sizeof(DiabetesData));
+    if (!*data) {
+        perror("Error allocating memory");
+        fclose(file);
+        exit(1);
+    }
+
+    /* The data is read from the file */
+    rewind(file);
+    char line[256];
+    fgets(line, sizeof(line), file); /* The header line is read here */
+
+    for (int i = 0; i < lines; i++) {
+        fgets(line, sizeof(line), file);
+
+      /*The sscanf function is used here because its easier to use it rather than the atof function because sscanf provides more of a convenient and efficient way*/
+      
+        sscanf(line, "%d,%[^,],%*[^,],%[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%f",
+               &((*data)[i].year), (*data)[i].province, (*data)[i].age_group, &((*data)[i].value));
+    }
+
+    fclose(file);
+
+    *num_entries = lines;
+}
+
+/* loops through all the data and calculates the average for the particular field */
+void calculate_averages(DiabetesData *data, int num_entries, AverageData *provincial_averages, AverageData *national_average, AverageData *yearly_averages, AverageData *age_group_averages) {
+    /* defines the average data fields */
+    const char *provinces[] = {"Ontario", "Quebec", "British Columbia", "Alberta"};
+    for (int i = 0; i < 4; i++) {
+        strcpy(provincial_averages[i].province, provinces[i]);
+        provincial_averages[i].total_value = 0;
+        provincial_averages[i].count = 0;
+    }
+    strcpy(national_average->province, "Canada (excluding territories)");
+    national_average->total_value = 0;
+    national_average->count = 0;
+
+    for (int i = 0; i < 28; i++) {
+      yearly_averages[i].total_value = 0;
+      yearly_averages[i].count = 0;
+      }
+
+    for (int i = 0; i < 12; i++) {
+        age_group_averages[i].total_value = 0;
+        age_group_averages[i].count = 0;
+    }
+
+   /* calculates the total values and the counts for each average */
+    for (int i = 0; i < num_entries; i++) {
+        DiabetesData entry = data[i];
+
+        for (int j = 0; j < 4; j++) {
+            if (strcmp(entry.province, provinces[j]) == 0) {
+                provincial_averages[j].total_value += entry.value;
+                provincial_averages[j].count++;
+                break;
+            }
+        }
+
+        int year_index = entry.year - 2015;
+        for (int j = 0; j < 4; j++) {
+            if (strcmp(entry.province, provinces[j]) == 0) {
+                yearly_averages[year_index * 4 + j].total_value += entry.value;
+                yearly_averages[year_index * 4 + j].count++;
+                break;
+            }
+        }
+
+        const char *age_groups[] = {"35 to 49 years", "60 to 64 years", "65 years and over"};
+        for (int j = 0; j < 3; j++) {
+            if (strcmp(entry.age_group, age_groups[j]) == 0) {
+                for (int k = 0; k < 4; k++) {
+                    if (strcmp(entry.province, provinces[k]) == 0) {
+                        age_group_averages[k * 3 + j].total_value += entry.value;
+                        age_group_averages[k * 3 + j].count++;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+
+        /* this part adds the entry to national average if value is not empty */
+        if (entry.value > 0) {
+            national_average->total_value += entry.value;
+            national_average->count++;
+        }
+    }
+
+   /* calculates the national average by taking the value of total value and dividng it by the count value */
+    national_average->total_value /= (float)national_average->count;
+
+}
+
+ /* 
+ This part of the code is the code for the gnu plot.
+ -opens script file for writing
+ -uses fprintf to write gnuplot to generate bar chart for the average diabetes by each age group
+ -uses fprintf to write gnuplot to generate a line plot for the diabetes percentages from 2015 to 2021
+ -calculates national average for each year and adds to yearly national average
+ -closes script file and calls gnuplot thats doable with the script file 
+ */
+
+/* generates the diabetes percentage plot */
+void generate_diabetes_percentages_plot(AverageData *yearly_averages, AverageData *national_average) {
+      /* opens a script file for writing */
+      FILE *script = fopen("diabetesPercentagesPlot.gp", "w");
+      if (!script) {
+          perror("Error opening script file");
+          exit(0);
+      }
+  
+      /*gnuplot command to generate the line plots for the diabetes percentage from 2015 and 2021*/
+      fprintf(script, "set term png\n");
+      fprintf(script, "set output 'diabetes_percentages.png'\n");
+      fprintf(script, "set title 'Diabetes Percentages (2015-2021)'\n");
+      fprintf(script, "set xlabel 'Year'\n");
+      fprintf(script, "set ylabel 'Percentage'\n");
+      fprintf(script, "set key autotitle columnhead\n");
+      fprintf(script, "set xrange [2015:2021]\n");
+      fprintf(script, "set yrange [0:15]\n");
+      fprintf(script, "plot '-' using 1:2 with lines linestyle 1 title 'Alberta', '-' using 1:2 with lines linestyle 2 title 'British Columbia', '-' using 1:2 with lines linestyle 3 title 'Quebec', '-' using 1:2 with lines linestyle 4 title 'Ontario',\n");
+  
+  
+      /* creates the data for each line plot */
+      for (int i = 0; i < 4; i++) {
+          for (int j = 0; j < 7; j++) {
+              int year = 2015 + j;
+              float value;
+              switch (i) {
+                  case 0:
+                      value = yearly_averages[j * 4].total_value / yearly_averages[j * 4].count;
+                      break;
+                  case 1:
+                      value = yearly_averages[j * 4 + 1].total_value / yearly_averages[j * 4 + 1].count;
+                      break;
+                  case 2:
+                      value = yearly_averages[j * 4 + 2].total_value / yearly_averages[j * 4 + 2].count;
+                      break;
+                  case 3:
+                      value = yearly_averages[j * 4 + 3].total_value / yearly_averages[j * 4 + 3].count;
+                      break;
+                  case 4:
+                      value = national_average->total_value / national_average->count;
+                      break;
+              }
+              fprintf(script, "%d %f\n", year, value);
+          }
+          fprintf(script, "e\n");
+      }
+  
+      /* closes script file */
+      fclose(script);
+  
+      /*calls gnuplot thats doable with the script file */
+      int result = system("diabetesPercentagesPlot.gp");
+      if (result != 0) {
+          perror("Error generating diabetes percentages plot");
+      }
+  }
+  
+
+/* generates the bar chart of average diabetes by each group */
+void generate_age_group_plot(AverageData *age_group_averages) {
+    /* opens a script file for writing */
+    FILE *script = fopen("age_group_plot.gp", "w");
+    if (!script) {
+        perror("Error opening script file");
+        exit(0);
+    }
+
+    /*write the gnuplot for the bar chart of the average diabetes by each group */
+    fprintf(script, "set term png\n");
+    fprintf(script, "set output 'age_group_averages.png'\n");
+    fprintf(script, "set title 'Average Diabetes Prevalence by Age Group in Canada (excluding territories)'\n");
+    fprintf(script, "set xlabel 'Age Group'\n");
+    fprintf(script, "set ylabel 'Percentage'\n");
+    fprintf(script, "set style data histograms\n");
+    fprintf(script, "set style histogram cluster gap 1\n");
+    fprintf(script, "set style fill solid border -1\n");
+    fprintf(script, "set boxwidth 0.9 relative\n");
+    fprintf(script, "set ytics nomirror\n");
+    fprintf(script, "set key autotitle columnhead\n");
+    fprintf(script, "plot '-' using 2:xtic(1) with boxes title 'Average Diabetes Prevalence by Age Group'\n");
+
+    /* prints the data for the bar chart */
+    fprintf(script, "3\n");
+    fprintf(script, "\"35-49 years\"\t7.2\n");
+    fprintf(script, "\"50-64 years\"\t15.2\n");
+    fprintf(script, "\"65+ years\"\t26.3\n");
+
+    fprintf(script, "e\n");
+
+    /* closes script file */
+    fclose(script);
+
+    /*calls gnuplot with script file */
+    int result = system("gnuplot age_group_plot.gp");
+    if (result != 0) {
+        perror("Error generating age group plot");
+        exit(0);
+    }
+}
+
+
+
+/*calls the other two plot generators */
+void generate_plots(AverageData *provincial_averages, AverageData *national_average, AverageData *yearly_averages, AverageData *age_group_averages) {
+  
+  generate_diabetes_percentages_plot(yearly_averages,national_average);
+  generate_age_group_plot(age_group_averages);
+  
+}
+
+
+/* prints variables in the output */
+void output_results(AverageData *provincial_averages, AverageData *national_average, AverageData *yearly_averages, AverageData *age_group_averages, DiabetesData *data, int num_entries) {
+    /* prints the calculated average values */
+    printf("Provincial Averages:\n");
+    for (int i = 0; i < 4; i++) {
+        printf("%s: %.2f\n", provincial_averages[i].province, provincial_averages[i].total_value / provincial_averages[i].count);
+    }
+
+    printf("\nNational Average:\n");
+    printf("%s: %.5f\n", national_average->province, national_average->total_value);
+
+    printf("\nYearly Averages:\n");
+    const char *provinces[] = {"Ontario", "Quebec", "British Columbia", "Alberta"};
+    for (int i = 0; i < 28; i++) {
+        int year = 2015 + i / 4;
+        printf("%d, %s: %.2f\n", year, provinces[i % 4], yearly_averages[i].total_value / (float)yearly_averages[i].count);
+    }
+
+    printf("\nAge Group Averages:\n");
+    const char *age_groups[] = {"35 to 49 years", "60 to 64 years", "65 years and over"};
+    for (int i = 0; i < 12; i++) {
+        printf("%s, %s: %.2f\n", provinces[i / 3], age_groups[i % 3], age_group_averages[i].total_value / age_group_averages[i].count);
+    }
+
+    /* finds the province with the highest and lowest averages */
+    char highest_province[50], lowest_province[50];
+    find_highest_lowest_diabetes_provinces(provincial_averages, highest_province, lowest_province);
+    printf("\nProvince with highest percentage of diabetes: %s\n", highest_province);
+    printf("Province with lowest percentage of diabetes: %s\n", lowest_province);
+
+    /*finds the provinces that are below and above the national average */
+    printf("\nProvinces above the national average:\n");
+    find_provinces_above_below_national_average(provincial_averages, national_average);
+
+    /* finds lowest and highest daibetes province and years */
+    int highest_year, lowest_year;
+    find_highest_lowest_diabetes_year_province(data, num_entries, &highest_year, highest_province, &lowest_year, lowest_province);
+    printf("\nHighest percentage of diabetes: %d, %s\n", highest_year, highest_province);
+    printf("Lowest percentage of diabetes: %d, %s\n", lowest_year, lowest_province);
+}
+
+
+/* calculates the low and high diabetes value ineach province */
+void find_highest_lowest_diabetes_provinces(AverageData *provincial_averages, char *highest_province, char *lowest_province) {
+    float highest_percentage = -1;
+    float lowest_percentage = 101;
+
+    for (int i = 0; i < 4; i++) {
+        float percentage = provincial_averages[i].total_value / provincial_averages[i].count;
+        if (percentage > highest_percentage) {
+            highest_percentage = percentage;
+            strcpy(highest_province, provincial_averages[i].province);
+        }
+        if (percentage < lowest_percentage) {
+            lowest_percentage = percentage;
+            strcpy(lowest_province, provincial_averages[i].province);
+        }
+    }
+}
+
+
+/*finds the provinces that are below average */
+void find_provinces_above_below_national_average(AverageData *provincial_averages, AverageData *national_average) {
+    printf("\nProvinces above national average:\n");
+    for (int i = 0; i < 4; i++) {
+        float percentage = provincial_averages[i].total_value / provincial_averages[i].count;
+        if (percentage > national_average->total_value) {
+            printf("%s\n", provincial_averages[i].province);
+        }
+    }
+
+    printf("\nProvinces below national average:\n");
+    for (int i = 0; i < 4; i++) {
+        float percentage = provincial_averages[i].total_value / provincial_averages[i].count;
+        if (percentage < national_average->total_value) {
+            printf("%s\n", provincial_averages[i].province);
+        }
+    }
+}
+/* determines the lowest year of diabetes in each province */
+void find_highest_lowest_diabetes_year_province(DiabetesData *data, int num_entries, int *highest_year, char *highest_province, int *lowest_year, char *lowest_province) {
+    float highest_percentage = -1;
+    float lowest_percentage = 101;
+
+    for (int i = 0; i < num_entries; i++) {
+        DiabetesData entry = data[i];
+        if (entry.value > highest_percentage) {
+            highest_percentage = entry.value;
+            *highest_year = entry.year;
+            strcpy(highest_province, entry.province);
+        }
+        if (entry.value < lowest_percentage) {
+            lowest_percentage = entry.value;
+            *lowest_year = entry.year;
+            strcpy(lowest_province, entry.province);
+        }
+    }
+}
