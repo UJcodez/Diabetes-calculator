@@ -1,0 +1,16 @@
+set title 'Average Diabetes Prevalence by Age Group in Canada (excluding territories)'
+set xlabel 'Age Group'
+set ylabel 'Percentage'
+set style data histograms
+set style histogram cluster gap 1
+set style fill solid border -1
+set boxwidth 0.9 relative
+set ytics nomirror
+set key autotitle columnhead
+plot '-' using 2:xtic(1) with boxes title 'Average Diabetes Prevalence by Age Group'
+3
+"35-49 years"	7.2
+"50-64 years"	15.2
+"65+ years"	26.3
+e
+
